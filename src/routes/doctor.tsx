@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
   Area,
   AreaChart,
@@ -14,7 +15,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, AlertTriangle, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  Hospital,
+  LockKeyhole,
+  Plus,
+  Stethoscope,
+  TrendingDown,
+  TrendingUp,
+  UserRound,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +55,7 @@ import {
   weeklySeries,
   type Patient,
 } from "@/lib/neuplay-store";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
@@ -59,8 +73,238 @@ export const Route = createFileRoute("/doctor")({
       },
     ],
   }),
-  component: DoctorDashboard,
+  component: DoctorPage,
 });
+
+function DoctorPage() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const validateSession = async (nextSession: Session | null) => {
+      if (!nextSession) {
+        if (active) {
+          setSession(null);
+          setAuthorized(false);
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      const { data: clinician, error } = await supabase
+        .from("clinicians")
+        .select("auth_user_id, approved")
+        .eq("auth_user_id", nextSession.user.id)
+        .maybeSingle();
+      const isAuthorized =
+        !error && clinician?.auth_user_id === nextSession.user.id && clinician.approved;
+
+      if (!isAuthorized) {
+        await supabase.auth.signOut();
+      }
+      if (active) {
+        setSession(isAuthorized ? nextSession : null);
+        setAuthorized(isAuthorized);
+        setCheckingSession(false);
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => validateSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void validateSession(nextSession);
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checkingSession) return null;
+  return authorized && session ? (
+    <DoctorDashboard onLogout={() => supabase.auth.signOut()} />
+  ) : (
+    <DoctorLogin />
+  );
+}
+
+function DoctorLogin() {
+  const [hospitalId, setHospitalId] = useState("");
+  const [doctorId, setDoctorId] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    const user = authData.user;
+    if (authError || !user) {
+      setError("Invalid hospital ID, doctor ID, or password.");
+      setSubmitting(false);
+      return;
+    }
+
+    const { data: clinician, error: clinicianError } = await supabase
+      .from("clinicians")
+      .select("auth_user_id, hospital_id, doctor_id, approved")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    const validClinician =
+      !clinicianError &&
+      clinician?.auth_user_id === user.id &&
+      clinician.hospital_id.toUpperCase() === hospitalId.trim().toUpperCase() &&
+      clinician.doctor_id.toUpperCase() === doctorId.trim().toUpperCase() &&
+      clinician.approved === true;
+
+    if (!validClinician) {
+      await supabase.auth.signOut();
+      setError("Invalid hospital ID, doctor ID, or password.");
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl">
+      <div className="grid min-h-[calc(100vh-130px)] items-center gap-10 py-8 lg:grid-cols-[1fr_420px]">
+        <section className="hidden text-white lg:block">
+          <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-white/20">
+            <Stethoscope className="h-7 w-7" />
+          </div>
+          <p className="text-sm font-medium tracking-widest uppercase opacity-80">
+            Care team access
+          </p>
+          <h1 className="mt-3 max-w-lg text-5xl font-semibold tracking-tight">
+            Welcome back to NEUPLAY.
+          </h1>
+          <p className="mt-5 max-w-md text-base leading-7 text-white/80">
+            Review patient recovery data, exercise trends, and weekly rehabilitation reports.
+          </p>
+        </section>
+
+        <Card className="w-full">
+          <CardHeader>
+            <div
+              className="mb-2 grid h-11 w-11 place-items-center rounded-xl text-primary-foreground"
+              style={{ background: "var(--gradient-calm)" }}
+            >
+              <Hospital className="h-5 w-5" />
+            </div>
+            <CardTitle>Doctor Login</CardTitle>
+            <CardDescription>Sign in to access your NEUPLAY clinician dashboard.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={submit}>
+              <div className="space-y-1.5">
+                <Label htmlFor="hospital-id">Hospital ID</Label>
+                <div className="relative">
+                  <Hospital className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                  <Input
+                    id="hospital-id"
+                    className="pl-9"
+                    value={hospitalId}
+                    onChange={(event) => setHospitalId(event.target.value)}
+                    placeholder="HOSP-001"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="doctor-id">Doctor ID</Label>
+                <div className="relative">
+                  <UserRound className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                  <Input
+                    id="doctor-id"
+                    className="pl-9"
+                    value={doctorId}
+                    onChange={(event) => setDoctorId(event.target.value)}
+                    placeholder="DOC-1001"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="doctor-email">Email</Label>
+                <div className="relative">
+                  <UserRound className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                  <Input
+                    id="doctor-email"
+                    className="pl-9"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="doctor@neuplay.demo"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="doctor-password">Password</Label>
+                <div className="relative">
+                  <LockKeyhole className="text-muted-foreground absolute top-2.5 left-3 h-4 w-4" />
+                  <Input
+                    id="doctor-password"
+                    className="pr-10 pl-9"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Enter your password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    className="text-muted-foreground hover:text-foreground absolute top-2.5 right-3"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              {error ? (
+                <p className="text-destructive text-sm" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {forgotMessage ? (
+                <p className="text-muted-foreground text-sm">{forgotMessage}</p>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? "Signing in..." : "Login to dashboard"}
+              </Button>
+              <button
+                type="button"
+                className="text-primary block w-full text-center text-sm font-medium hover:underline"
+                onClick={() =>
+                  setForgotMessage(
+                    "Please contact your hospital administrator to reset your password.",
+                  )
+                }
+              >
+                Forgot password?
+              </button>
+              <p className="text-muted-foreground border-border border-t pt-4 text-center text-xs">
+                Demo access: HOSP-001 · DOC-1001
+              </p>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function useStore() {
   const [tick, setTick] = useState(0);
@@ -74,13 +318,10 @@ function useStore() {
       window.removeEventListener("storage", h);
     };
   }, []);
-  return useMemo(
-    () => ({ patients: getPatients(), sessions: getSessions(), tick }),
-    [tick],
-  );
+  return useMemo(() => ({ patients: getPatients(), sessions: getSessions(), tick }), [tick]);
 }
 
-function DoctorDashboard() {
+function DoctorDashboard({ onLogout }: { onLogout: () => void }) {
   const { patients, sessions } = useStore();
   const [selected, setSelected] = useState<string | null>(null);
   const activeId = selected ?? patients[0]?.id ?? null;
@@ -101,7 +342,12 @@ function DoctorDashboard() {
             </span>
             <span className="truncate font-semibold">NEUPLAY Clinician</span>
           </Link>
-          <div className="text-muted-foreground text-sm">Dr. R. Iyer · Neuro-rehab unit</div>
+          <div className="flex items-center gap-4">
+            <div className="text-muted-foreground text-sm">Dr. R. Iyer · Neuro-rehab unit</div>
+            <Button variant="outline" size="sm" onClick={onLogout}>
+              Sign out
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -169,13 +415,19 @@ function SummaryRow({
   sessions: ReturnType<typeof getSessions>;
   concerns: number;
 }) {
-  const week = sessions.filter(
-    (s) => Date.now() - new Date(s.date).getTime() < 7 * 86400000,
-  );
+  const week = sessions.filter((s) => Date.now() - new Date(s.date).getTime() < 7 * 86400000);
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Stat label="Active patients" value={String(patients.length)} hint="Enrolled in finger protocol" />
-      <Stat label="Sessions this week" value={String(week.length)} hint="Piano rehab sessions logged" />
+      <Stat
+        label="Active patients"
+        value={String(patients.length)}
+        hint="Enrolled in finger protocol"
+      />
+      <Stat
+        label="Sessions this week"
+        value={String(week.length)}
+        hint="Piano rehab sessions logged"
+      />
       <Stat
         label="Mean accuracy"
         value={`${avg(week.map((s) => s.accuracy)) || avg(sessions.map((s) => s.accuracy))}%`}
@@ -262,12 +514,24 @@ function NewPatientForm({ onCreated }: { onCreated: (id: string) => void }) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="age">Age</Label>
-              <Input id="age" type="number" value={form.age} onChange={set("age")} placeholder="45" />
+              <Input
+                id="age"
+                type="number"
+                value={form.age}
+                onChange={set("age")}
+                placeholder="45"
+              />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="name">Full name</Label>
-            <Input id="name" value={form.name} onChange={set("name")} placeholder="Jane Cooper" required />
+            <Input
+              id="name"
+              value={form.name}
+              onChange={set("name")}
+              placeholder="Jane Cooper"
+              required
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="cond">Condition</Label>
@@ -398,18 +662,21 @@ function PatientDetail({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {[...rows].reverse().slice(0, 10).map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="whitespace-nowrap">{r.date}</TableCell>
-                  <TableCell>{r.exercise}</TableCell>
-                  <TableCell className="text-right">{r.reps}</TableCell>
-                  <TableCell className="text-right">{r.accuracy}%</TableCell>
-                  <TableCell className="text-right">{r.rangeOfMotion}%</TableCell>
-                  <TableCell className="text-right">
-                    {Math.round(r.durationSec / 60)}m {r.durationSec % 60}s
-                  </TableCell>
-                </TableRow>
-              ))}
+              {[...rows]
+                .reverse()
+                .slice(0, 10)
+                .map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="whitespace-nowrap">{r.date}</TableCell>
+                    <TableCell>{r.exercise}</TableCell>
+                    <TableCell className="text-right">{r.reps}</TableCell>
+                    <TableCell className="text-right">{r.accuracy}%</TableCell>
+                    <TableCell className="text-right">{r.rangeOfMotion}%</TableCell>
+                    <TableCell className="text-right">
+                      {Math.round(r.durationSec / 60)}m {r.durationSec % 60}s
+                    </TableCell>
+                  </TableRow>
+                ))}
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground">
@@ -479,8 +746,18 @@ function WeeklyReports({
                   }}
                 />
                 <Legend />
-                <Line dataKey="rangeOfMotion" name="Range of motion %" stroke="var(--chart-2)" strokeWidth={2} />
-                <Line dataKey="accuracy" name="Accuracy %" stroke="var(--chart-1)" strokeWidth={2} />
+                <Line
+                  dataKey="rangeOfMotion"
+                  name="Range of motion %"
+                  stroke="var(--chart-2)"
+                  strokeWidth={2}
+                />
+                <Line
+                  dataKey="accuracy"
+                  name="Accuracy %"
+                  stroke="var(--chart-1)"
+                  strokeWidth={2}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -499,7 +776,12 @@ function WeeklyReports({
                   }}
                 />
                 <Legend />
-                <Bar dataKey="consistency" name="Consistency %" fill="var(--chart-3)" radius={[6, 6, 0, 0]} />
+                <Bar
+                  dataKey="consistency"
+                  name="Consistency %"
+                  fill="var(--chart-3)"
+                  radius={[6, 6, 0, 0]}
+                />
                 <Bar dataKey="reps" name="Total reps" fill="var(--chart-4)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -512,8 +794,8 @@ function WeeklyReports({
             {patient?.name ?? "Patient"} completed {rows.length} finger-rehab sessions in the last 4
             weeks with a mean accuracy of {avg(rows.map((r) => r.accuracy))}% and mean range of
             motion of {avg(rows.map((r) => r.rangeOfMotion))}%. Accuracy trend is{" "}
-            {improvement(rows) >= 0 ? "improving" : "declining"} by{" "}
-            {Math.abs(improvement(rows))} percentage points across the cycle. Recommend{" "}
+            {improvement(rows) >= 0 ? "improving" : "declining"} by {Math.abs(improvement(rows))}{" "}
+            percentage points across the cycle. Recommend{" "}
             {improvement(rows) >= 5
               ? "progressing to five-finger sequencing at higher tempo."
               : "maintaining current tempo and adding thumb opposition holds."}
@@ -536,10 +818,7 @@ function Concerns({ concerns }: { concerns: ReturnType<typeof flags> }) {
           <p className="text-muted-foreground text-sm">No concerns detected this cycle.</p>
         ) : (
           concerns.map((c, i) => (
-            <div
-              key={i}
-              className="border-border flex items-start gap-3 rounded-xl border p-4"
-            >
+            <div key={i} className="border-border flex items-start gap-3 rounded-xl border p-4">
               <AlertTriangle
                 className={`mt-0.5 h-4 w-4 shrink-0 ${
                   c.level === "high" ? "text-destructive" : "text-chart-3"
@@ -552,7 +831,10 @@ function Concerns({ concerns }: { concerns: ReturnType<typeof flags> }) {
                 </p>
                 <p className="text-muted-foreground text-sm">{c.text}</p>
               </div>
-              <Badge variant={c.level === "high" ? "destructive" : "secondary"} className="ml-auto shrink-0">
+              <Badge
+                variant={c.level === "high" ? "destructive" : "secondary"}
+                className="ml-auto shrink-0"
+              >
                 {c.level}
               </Badge>
             </div>

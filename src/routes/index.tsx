@@ -37,7 +37,7 @@ function Home() {
           to="/doctor"
           className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
         >
-          Clinician login
+          Doctor Login
         </Link>
       </header>
 
@@ -62,11 +62,11 @@ function Home() {
             <span className="bg-secondary text-secondary-foreground grid h-12 w-12 place-items-center rounded-2xl">
               <Stethoscope className="h-6 w-6" />
             </span>
-            <h2 className="mt-5 text-xl font-semibold">Doctor dashboard</h2>
+            <h2 className="mt-5 text-xl font-semibold">Doctor Login</h2>
             <p className="text-muted-foreground mt-2 text-sm">
               Patient profiles, exercise logs, weekly charted reports and flagged concerns.
             </p>
-            <p className="text-primary mt-4 text-sm font-medium">Open dashboard →</p>
+            <p className="text-primary mt-4 text-sm font-medium">Sign in →</p>
           </Link>
 
           <Link
