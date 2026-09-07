@@ -11,6 +11,7 @@ import {
   Music4,
   Play,
   Sparkles,
+  Star,
   Timer as TimerIcon,
   Trophy,
   Volume2,
@@ -88,9 +89,9 @@ const REHAB_GAMES: RehabGame[] = [
   {
     id: "stars",
     title: "Star Catching",
-    description: "A hand mobility game is coming soon.",
+    description: "Raise your hand to catch falling stars in a 60-second session.",
     icon: Sparkles,
-    available: false,
+    available: true,
     accent: "var(--gradient-calm)",
   },
 ];
@@ -124,6 +125,8 @@ function PlayPage() {
           <PatientLogin onLogin={setPatient} />
         ) : selectedGame === "piano" ? (
           <Game patient={patient} onBack={() => setSelectedGame(null)} />
+        ) : selectedGame === "stars" ? (
+          <StarCatchingGame patient={patient} onBack={() => setSelectedGame(null)} />
         ) : (
           <PatientDashboard patient={patient} onSelectGame={setSelectedGame} />
         )}
@@ -305,6 +308,360 @@ function PatientDashboard({
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+type FallingStar = { x: number; y: number; size: number; speed: number };
+type HandResults = { multiHandLandmarks?: Array<Array<{ x: number; y: number }>> };
+type MediaPipeHands = {
+  setOptions: (options: Record<string, number>) => void;
+  onResults: (handler: (results: HandResults) => void) => void;
+  send: (input: { image: HTMLVideoElement }) => Promise<void>;
+};
+type MediaPipeCamera = { start: () => void; stop?: () => void };
+type MediaPipeGlobals = {
+  Hands: new (options: { locateFile: (file: string) => string }) => MediaPipeHands;
+  Camera: new (
+    video: HTMLVideoElement,
+    options: { onFrame: () => Promise<void>; width: number; height: number },
+  ) => MediaPipeCamera;
+};
+
+const loadScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(script);
+  });
+
+function StarCatchingGame({ patient, onBack }: { patient: Patient; onBack: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const handDotRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRef = useRef<MediaPipeCamera | null>(null);
+  const audioRef = useRef<AudioContext | null>(null);
+  const [status, setStatus] = useState<"ready" | "running" | "done">("ready");
+  const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS);
+  const [starsCaught, setStarsCaught] = useState(0);
+  const [handMovements, setHandMovements] = useState(0);
+  const [handStatus, setHandStatus] = useState("Show your hand to camera");
+  const [catchFlash, setCatchFlash] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const starsRef = useRef<FallingStar[]>([]);
+  const handRef = useRef({ x: -200, y: -200 });
+  const lastSavedRef = useRef(false);
+  const previousSession = patientSessions(patient.id, getSessions())
+    .filter((session) => session.gameType === "star-catching")
+    .at(-1);
+
+  const playCatchSound = useCallback(() => {
+    const context = audioRef.current;
+    if (!context) return;
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      const startAt = context.currentTime + index * 0.08;
+      gain.gain.setValueAtTime(0.2, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.15);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + 0.15);
+    });
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    cameraRef.current?.stop?.();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraRef.current = null;
+    streamRef.current = null;
+  }, []);
+
+  useEffect(() => stopCamera, [stopCamera]);
+
+  useEffect(() => {
+    if (status !== "running") return;
+    const timer = window.setInterval(() => {
+      setTimeLeft((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [status]);
+
+  useEffect(() => {
+    if (status === "running" && timeLeft === 0) {
+      stopCamera();
+      setStatus("done");
+    }
+  }, [status, stopCamera, timeLeft]);
+
+  useEffect(() => {
+    if (status !== "done" || lastSavedRef.current) return;
+    lastSavedRef.current = true;
+    addSession({
+      id: `${patient.id}-star-catching-${Date.now()}`,
+      patientId: patient.id,
+      date: new Date().toISOString().slice(0, 10),
+      exercise: "Star Catching",
+      reps: starsCaught,
+      accuracy: starsCaught
+        ? Math.min(100, Math.round((starsCaught / Math.max(handMovements, 1)) * 100))
+        : 0,
+      rangeOfMotion: 0,
+      durationSec: SESSION_SECONDS - timeLeft,
+      gameType: "star-catching",
+      starsCaught,
+      handMovements,
+      secondsActive: SESSION_SECONDS - timeLeft,
+    });
+  }, [handMovements, patient.id, starsCaught, status, timeLeft]);
+
+  const startTracking = useCallback(async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    setCameraError("");
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
+      await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
+      const mediaPipe = globalThis as unknown as MediaPipeGlobals;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      video.srcObject = stream;
+      await video.play();
+      const hands = new mediaPipe.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.5,
+      });
+      hands.onResults((results) => {
+        const landmark = results.multiHandLandmarks?.[0]?.[9];
+        if (!landmark) {
+          handRef.current = { x: -200, y: -200 };
+          if (handDotRef.current) handDotRef.current.style.display = "none";
+          setHandStatus("Show your hand to camera");
+          return;
+        }
+        const bounds = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / Math.max(bounds.width, 1);
+        const scaleY = canvas.height / Math.max(bounds.height, 1);
+        const x = (1 - landmark.x) * bounds.width * scaleX;
+        const y = landmark.y * bounds.height * scaleY;
+        handRef.current = { x, y };
+        if (handDotRef.current) {
+          handDotRef.current.style.display = "block";
+          handDotRef.current.style.left = `${(1 - landmark.x) * bounds.width}px`;
+          handDotRef.current.style.top = `${landmark.y * bounds.height}px`;
+        }
+        setHandStatus("Hand detected!");
+      });
+      const camera = new mediaPipe.Camera(video, {
+        onFrame: () => hands.send({ image: video }),
+        width: 640,
+        height: 480,
+      });
+      cameraRef.current = camera;
+      camera.start();
+    } catch {
+      setCameraError("Camera or hand tracking is unavailable. Allow camera access and try again.");
+      setHandStatus("Camera unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status !== "running") return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const resize = () => {
+      const bounds = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(bounds.width));
+      canvas.height = Math.max(1, Math.round(bounds.height));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    let animationFrame = 0;
+    let lastSpawn = 0;
+    const draw = (now: number) => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      if (now - lastSpawn > 1000 && starsRef.current.length < 4) {
+        starsRef.current.push({
+          x: 50 + Math.random() * Math.max(canvas.width - 100, 50),
+          y: -40,
+          size: 38 + Math.random() * 18,
+          speed: 0.8 + Math.random() * 1.2,
+        });
+        lastSpawn = now;
+      }
+      for (let index = starsRef.current.length - 1; index >= 0; index -= 1) {
+        const star = starsRef.current[index];
+        if (!star) continue;
+        star.y += star.speed;
+        context.font = `${star.size}px Arial`;
+        context.fillText("⭐", star.x - star.size / 2, star.y);
+        const dx = handRef.current.x - star.x;
+        const dy = handRef.current.y - star.y;
+        if (Math.sqrt(dx * dx + dy * dy) < star.size) {
+          starsRef.current.splice(index, 1);
+          setStarsCaught((value) => value + 1);
+          setHandMovements((value) => value + 1);
+          setCatchFlash(true);
+          playCatchSound();
+          window.setTimeout(() => setCatchFlash(false), 500);
+        } else if (star.y > canvas.height + 60) {
+          starsRef.current.splice(index, 1);
+        }
+      }
+      animationFrame = window.requestAnimationFrame(draw);
+    };
+    animationFrame = window.requestAnimationFrame(draw);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", resize);
+    };
+  }, [playCatchSound, status]);
+
+  const start = () => {
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    audioRef.current = new AudioContextConstructor();
+    starsRef.current = [];
+    handRef.current = { x: -200, y: -200 };
+    lastSavedRef.current = false;
+    setStarsCaught(0);
+    setHandMovements(0);
+    setTimeLeft(SESSION_SECONDS);
+    setStatus("running");
+    void startTracking();
+  };
+
+  const secondsActive = SESSION_SECONDS - timeLeft;
+  const vsYesterday = previousSession
+    ? `${starsCaught - (previousSession.starsCaught ?? previousSession.reps) >= 0 ? "+" : ""}${starsCaught - (previousSession.starsCaught ?? previousSession.reps)}`
+    : "First session";
+  return (
+    <div className="fixed inset-0 z-20 overflow-hidden bg-black text-white">
+      <video
+        ref={videoRef}
+        className="absolute inset-0 h-full w-full object-cover -scale-x-100"
+        muted
+        playsInline
+      />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <div
+        ref={handDotRef}
+        className="pointer-events-none absolute z-10 hidden h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-[#00ff88] bg-[#00ff88]/70 shadow-[0_0_20px_#00ff88]"
+      />
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-black/80 px-5 py-3">
+        <div className="font-semibold text-[#00ff88]">NEUPLAY · Star Catching</div>
+        <div className="flex gap-5 text-center">
+          <div>
+            <p className="text-2xl font-bold text-[#00ff88]">{starsCaught}</p>
+            <p className="text-[11px] text-white/60">STARS CAUGHT</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-[#00ff88]">{timeLeft}</p>
+            <p className="text-[11px] text-white/60">SECONDS</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-[#00ff88]">{handMovements}</p>
+            <p className="text-[11px] text-white/60">MOVEMENTS</p>
+          </div>
+        </div>
+      </div>
+      {catchFlash ? (
+        <div className="absolute top-2/5 left-1/2 z-10 -translate-x-1/2 text-5xl font-bold text-yellow-300 drop-shadow-[0_0_20px_#ff6600]">
+          ⭐ CAUGHT!
+        </div>
+      ) : null}
+      {status === "running" ? (
+        <>
+          <div className="absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-5 py-2 text-sm">
+            {handStatus}
+          </div>
+          <div className="absolute bottom-8 left-[10%] z-10 h-2 w-4/5 rounded bg-white/20">
+            <div
+              className={`h-full rounded bg-[#00ff88] ${timeLeft <= 15 ? "bg-red-500" : ""}`}
+              style={{ width: `${(timeLeft / SESSION_SECONDS) * 100}%` }}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/90 px-5 text-center">
+          {status === "ready" ? (
+            <>
+              <h1 className="text-5xl font-bold text-[#00ff88]">⭐ Star Catching</h1>
+              <p className="mt-3 text-white/70">Raise your hand to catch falling stars.</p>
+              <p className="mt-2 text-white/70">60 seconds of rehabilitation movement.</p>
+              <Button
+                className="mt-7 rounded-full bg-[#00ff88] px-10 text-black hover:bg-[#00dd77]"
+                onClick={start}
+              >
+                <Play className="h-4 w-4" /> Start session
+              </Button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-4xl font-bold text-[#00ff88]">Session Complete!</h2>
+              <div className="mt-7 grid grid-cols-2 gap-4">
+                <ResultBox label="Stars Caught" value={starsCaught} />
+                <ResultBox label="Hand Movements" value={handMovements} gold />
+                <ResultBox label="Seconds Active" value={secondsActive} />
+                <ResultBox label="vs Yesterday" value={vsYesterday} />
+              </div>
+              <Button
+                className="mt-7 rounded-full bg-[#00ff88] px-10 text-black hover:bg-[#00dd77]"
+                onClick={start}
+              >
+                <Play className="h-4 w-4" /> Play Again
+              </Button>
+            </>
+          )}
+          {cameraError ? <p className="mt-4 max-w-md text-sm text-red-300">{cameraError}</p> : null}
+          <Button variant="ghost" className="mt-4 text-white/70" onClick={onBack}>
+            Back to dashboard
+          </Button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="absolute right-4 bottom-4 z-40 rounded-full bg-black/60 px-3 py-2 text-xs text-white/70"
+        onClick={onBack}
+      >
+        Exit
+      </button>
+    </div>
+  );
+}
+
+function ResultBox({
+  label,
+  value,
+  gold = false,
+}: {
+  label: string;
+  value: number | string;
+  gold?: boolean;
+}) {
+  return (
+    <div className="min-w-36 rounded-2xl border-2 border-[#00ff88] bg-[#1a1a2e] px-6 py-4">
+      <p className={`text-4xl font-bold ${gold ? "text-yellow-300" : "text-[#00ff88]"}`}>{value}</p>
+      <p className="mt-1 text-xs text-white/60">{label}</p>
     </div>
   );
 }

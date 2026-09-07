@@ -16,6 +16,10 @@ export type Session = {
   accuracy: number; // 0-100
   rangeOfMotion: number; // 0-100
   durationSec: number;
+  gameType?: "piano" | "star-catching";
+  starsCaught?: number;
+  handMovements?: number;
+  secondsActive?: number;
 };
 
 const PATIENTS_KEY = "neuplay.patients.v1";
@@ -130,17 +134,13 @@ export function addSession(s: Session) {
 }
 
 export function findPatient(id: string, dob: string) {
-  return getPatients().find(
-    (p) => p.id.toLowerCase() === id.trim().toLowerCase() && p.dob === dob,
-  );
+  return getPatients().find((p) => p.id.toLowerCase() === id.trim().toLowerCase() && p.dob === dob);
 }
 
 /* ---------- analytics ---------- */
 
 export function patientSessions(patientId: string, all = getSessions()) {
-  return all
-    .filter((s) => s.patientId === patientId)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  return all.filter((s) => s.patientId === patientId).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function avg(nums: number[]) {
@@ -177,7 +177,12 @@ export function improvement(sessions: Session[]) {
   return last - first;
 }
 
-export type Flag = { patientId: string; patientName: string; level: "high" | "medium"; text: string };
+export type Flag = {
+  patientId: string;
+  patientName: string;
+  level: "high" | "medium";
+  text: string;
+};
 
 export function flags(patients = getPatients(), all = getSessions()): Flag[] {
   const out: Flag[] = [];
