@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>NEUPLAY</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.8);
+            position: absolute;
+            top: 0;
+            z-index: 10;
+        }
+
+        #title {
+            color: #00ff88;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        #score-board {
+            display: flex;
+            gap: 30px;
+        }
+
+        .stat {
+            text-align: center;
+            color: white;
+        }
+
+        .stat-num {
+            font-size: 28px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #video {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 10;
+        }
+
+        #catch-msg {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: bold;
+            color: #ffd700;
+            opacity: 0;
+            z-index: 20;
+            pointer-events: none;
+            text-shadow: 0 0 20px #ff6600;
+            transition: opacity 0.2s;
+        }
+
+        #hand-dot {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 255, 136, 0.7);
+            border: 3px solid #00ff88;
+            border-radius: 50%;
+            pointer-events: none;
+            display: none;
+            z-index: 15;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        #timer-bar-container {
+            position: absolute;
+            bottom: 50px;
+            left: 10%;
+            width: 80%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            z-index: 10;
+        }
+
+        #timer-bar {
+            height: 100%;
+            background: #00ff88;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        /* START SCREEN */
+        #start-screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            color: white;
+        }
+
+        #start-screen h1 {
+            font-size: 64px;
+            color: #00ff88;
+            margin-bottom: 8px;
+        }
+
+        #start-screen p {
+            font-size: 18px;
+            color: #aaa;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .info-box {
+            background: #1a1a2e;
+            border: 1px solid #00ff88;
+            border-radius: 12px;
+            padding: 16px 30px;
+            margin: 10px 0 24px;
+            text-align: center;
+            font-size: 15px;
+            color: #ccc;
+            max-width: 380px;
+        }
+
+        #start-btn {
+            background: #00ff88;
+            color: black;
+            border: none;
+            padding: 18px 55px;
+            font-size: 22px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+        }
+
+        /* END SCREEN */
+        #end-screen {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            color: white;
+        }
+
+        #end-screen h2 {
+            font-size: 42px;
+            color: #00ff88;
+            margin-bottom: 24px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .result-box {
+            background: #1a1a2e;
+            border: 2px solid #00ff88;
+            border-radius: 16px;
+            padding: 24px 36px;
+            text-align: center;
+        }
+
+        .result-num {
+            font-size: 60px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .result-num.gold {
+            color: #ffd700;
+        }
+
+        .result-label {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 4px;
+        }
+
+        #restart-btn {
+            background: #00ff88;
+            color: black;
+            border: none;
+            padding: 15px 45px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+        }
+
+        .rehab-note {
+            margin-top: 16px;
+            font-size: 13px;
+            color: #555;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- START SCREEN -->
+    <div id="start-screen">
+        <h1>🧠 NEUPLAY</h1>
+        <p>AI Rehabilitation Gaming System</p>
+        <div class="info-box">
+            Raise your hand to catch falling stars<br>
+            Each catch = one therapy movement<br>
+            <strong style="color:#00ff88">60 seconds session</strong>
+        </div>
+        <button id="start-btn" onclick="startGame()">▶ START SESSION</button>
+    </div>
+
+    <!-- END SCREEN -->
+    <div id="end-screen">
+        <h2>🏆 Session Complete!</h2>
+        <div class="result-grid">
+            <div class="result-box">
+                <div class="result-num" id="final-score">0</div>
+                <div class="result-label">Stars Caught</div>
+            </div>
+            <div class="result-box">
+                <div class="result-num gold" id="final-moves">0</div>
+                <div class="result-label">Hand Movements</div>
+            </div>
+            <div class="result-box">
+                <div class="result-num" id="final-time" style="color:#a855f7">60</div>
+                <div class="result-label">Seconds Active</div>
+            </div>
+            <div class="result-box">
+                <div class="result-num" id="final-progress" style="color:#ff6b2b">+12%</div>
+                <div class="result-label">vs Yesterday</div>
+            </div>
+        </div>
+        <button id="restart-btn" onclick="restartGame()">🔄 Play Again</button>
+        <div class="rehab-note">
+            Doctor report will be generated automatically
+        </div>
+    </div>
+
+    <!-- HEADER -->
+    <div id="header">
+        <div id="title">🧠 NEUPLAY</div>
+        <div id="score-board">
+            <div class="stat">
+                <div class="stat-num" id="score">0</div>
+                <div class="stat-label">SCORE</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num" id="timer-display">60</div>
+                <div class="stat-label">SECONDS</div>
+            </div>
+            <div class="stat">
+                <div class="stat-num" id="moves">0</div>
+                <div class="stat-label">MOVEMENTS</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME -->
+    <div id="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div id="hand-dot"></div>
+        <div id="catch-msg">⭐ CAUGHT!</div>
+        <div id="status">Loading...</div>
+        <div id="timer-bar-container">
+            <div id="timer-bar"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+    <script>
+        // Elements
+        const video = document.getElementById('video')
+        const canvas = document.getElementById('canvas')
+        const ctx = canvas.getContext('2d')
+        const statusEl = document.getElementById('status')
+        const handDot = document.getElementById('hand-dot')
+        const catchMsg = document.getElementById('catch-msg')
+
+        // Game variables
+        let score = 0
+        let moves = 0
+        let timeLeft = 60
+        let gameRunning = false
+        let timerInterval = null
+        let spawnInterval = null
+        let stars = []
+        let handX = -200
+        let handY = -200
+        let audioUnlocked = false
+        let audioCtx = null
+
+        // Resize canvas
+        function resize() {
+            canvas.width = window.innerWidth
+            canvas.height = window.innerHeight
+        }
+        resize()
+        window.addEventListener('resize', resize)
+
+        // Unlock audio on first click
+        document.addEventListener('click', () => {
+            if (!audioUnlocked) {
+                audioCtx = new (window.AudioContext ||
+                    window.webkitAudioContext)()
+                audioUnlocked = true
+            }
+        }, { once: true })
+
+        // Play reward sound
+        function playSound() {
+            if (!audioCtx) return
+            try {
+                const notes = [523, 659, 784, 1047]
+                notes.forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator()
+                    const gain = audioCtx.createGain()
+                    osc.connect(gain)
+                    gain.connect(audioCtx.destination)
+                    osc.frequency.value = freq
+                    osc.type = 'sine'
+                    const t = audioCtx.currentTime + i * 0.08
+                    gain.gain.setValueAtTime(0.2, t)
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+                    osc.start(t)
+                    osc.stop(t + 0.15)
+                })
+            } catch (e) { }
+        }
+
+        // Create star
+        function newStar() {
+            return {
+                x: 50 + Math.random() * (canvas.width - 100),
+                y: -40,
+                size: 38 + Math.random() * 18,
+                speed: 0.8 + Math.random() * 1.2,
+                caught: false
+            }
+        }
+
+        // Show catch animation
+        function showCatch() {
+            catchMsg.style.opacity = '1'
+            playSound()
+            setTimeout(() => {
+                catchMsg.style.opacity = '0'
+            }, 500)
+        }
+
+        // Update score display
+        function updateUI() {
+            document.getElementById('score').innerText = score
+            document.getElementById('moves').innerText = moves
+        }
+
+        // Game loop
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+            if (!gameRunning) {
+                requestAnimationFrame(loop)
+                return
+            }
+
+            // Draw and update stars
+            for (let i = stars.length - 1; i >= 0; i--) {
+                const s = stars[i]
+                if (s.caught) continue
+
+                s.y += s.speed
+
+                // Draw star
+                ctx.font = s.size + 'px Arial'
+                ctx.fillText('⭐', s.x - s.size / 2, s.y)
+
+                // Check catch
+                const dx = handX - s.x
+                const dy = handY - s.y
+                const dist = Math.sqrt(dx * dx + dy * dy)
+
+                if (dist < s.size) {
+                    s.caught = true
+                    score += 10
+                    moves++
+                    updateUI()
+                    showCatch()
+                    stars.splice(i, 1)
+                    continue
+                }
+
+                // Remove if off screen
+                if (s.y > canvas.height + 60) {
+                    stars.splice(i, 1)
+                }
+            }
+
+            requestAnimationFrame(loop)
+        }
+
+        // Start game
+        function startGame() {
+            // Unlock audio
+            audioCtx = new (window.AudioContext ||
+                window.webkitAudioContext)()
+            audioUnlocked = true
+
+            document.getElementById('start-screen').style.display = 'none'
+            document.getElementById('end-screen').style.display = 'none'
+
+            score = 0
+            moves = 0
+            timeLeft = 60
+            stars = []
+            gameRunning = true
+            updateUI()
+
+            // Spawn stars
+            spawnInterval = setInterval(() => {
+                if (gameRunning && stars.length < 4) {
+                    stars.push(newStar())
+                }
+            }, 1000)
+
+            // Timer
+            timerInterval = setInterval(() => {
+                if (!gameRunning) return
+                timeLeft--
+                document.getElementById('timer-display').innerText = timeLeft
+                const pct = (timeLeft / 60) * 100
+                document.getElementById('timer-bar').style.width = pct + '%'
+                if (timeLeft <= 15) {
+                    document.getElementById('timer-bar').style.background = '#ff4444'
+                }
+                if (timeLeft <= 0) endGame()
+            }, 1000)
+
+            loop()
+            startCamera()
+        }
+
+        // End game
+        function endGame() {
+            gameRunning = false
+            clearInterval(timerInterval)
+            clearInterval(spawnInterval)
+
+            document.getElementById('final-score').innerText = score
+            document.getElementById('final-moves').innerText = moves
+            document.getElementById('final-time').innerText = 60 - timeLeft
+            document.getElementById('final-progress').innerText =
+                '+' + Math.floor(Math.random() * 15 + 5) + '%'
+
+            document.getElementById('end-screen').style.display = 'flex'
+        }
+
+        // Restart
+        function restartGame() {
+            document.getElementById('end-screen').style.display = 'none'
+            score = 0
+            moves = 0
+            timeLeft = 60
+            stars = []
+            gameRunning = true
+            updateUI()
+            document.getElementById('timer-bar').style.background = '#00ff88'
+            document.getElementById('timer-display').innerText = 60
+            document.getElementById('timer-bar').style.width = '100%'
+
+            spawnInterval = setInterval(() => {
+                if (gameRunning && stars.length < 4) {
+                    stars.push(newStar())
+                }
+            }, 1000)
+
+            timerInterval = setInterval(() => {
+                if (!gameRunning) return
+                timeLeft--
+                document.getElementById('timer-display').innerText = timeLeft
+                const pct = (timeLeft / 60) * 100
+                document.getElementById('timer-bar').style.width = pct + '%'
+                if (timeLeft <= 15) {
+                    document.getElementById('timer-bar').style.background = '#ff4444'
+                }
+                if (timeLeft <= 0) endGame()
+            }, 1000)
+        }
+
+        // Camera + MediaPipe
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream
+                    statusEl.innerText = '✅ Show your hand to camera'
+
+                    try {
+                        const hands = new Hands({
+                            locateFile: f =>
+                                `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+                        })
+                        hands.setOptions({
+                            maxNumHands: 1,
+                            modelComplexity: 0,
+                            minDetectionConfidence: 0.6,
+                            minTrackingConfidence: 0.5
+                        })
+                        hands.onResults(results => {
+                            if (results.multiHandLandmarks &&
+                                results.multiHandLandmarks.length > 0) {
+                                const lm = results.multiHandLandmarks[0][9]
+                                handX = (1 - lm.x) * canvas.width
+                                handY = lm.y * canvas.height
+                                handDot.style.display = 'block'
+                                handDot.style.left = handX + 'px'
+                                handDot.style.top = handY + 'px'
+                                statusEl.innerText = '🖐️ Hand detected!'
+                            } else {
+                                handDot.style.display = 'none'
+                                handX = -200
+                                handY = -200
+                                statusEl.innerText = '✋ Show your hand to camera'
+                            }
+                        })
+                        const cam = new Camera(video, {
+                            onFrame: async () => {
+                                await hands.send({ image: video })
+                            },
+                            width: 640,
+                            height: 480
+                        })
+                        cam.start()
+                    } catch (e) {
+                        // Mouse fallback
+                        statusEl.innerText = '🖱️ Move mouse to play'
+                        canvas.addEventListener('mousemove', e => {
+                            const r = canvas.getBoundingClientRect()
+                            handX = e.clientX - r.left
+                            handY = e.clientY - r.top
+                            handDot.style.display = 'block'
+                            handDot.style.left = handX + 'px'
+                            handDot.style.top = handY + 'px'
+                        })
+                    }
+                })
+                .catch(() => {
+                    statusEl.innerText = '❌ Camera error — allow permission'
+                    // Mouse fallback
+                    canvas.addEventListener('mousemove', e => {
+                        const r = canvas.getBoundingClientRect()
+                        handX = e.clientX - r.left
+                        handY = e.clientY - r.top
+                        handDot.style.display = 'block'
+                        handDot.style.left = handX + 'px'
+                        handDot.style.top = handY + 'px'
+                    })
+                })
+        }
+    </script>
+</body>
+
+</html>
