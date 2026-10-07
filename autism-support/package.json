@@ -1,0 +1,8 @@
+{
+  "name": "neuplay-autism-support",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {"dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"", "dev:server": "tsx watch server/index.ts", "dev:client": "vite --config client/vite.config.ts", "build": "vite build --config client/vite.config.ts"},
+  "dependencies": {"bcryptjs": "^2.4.3", "cors": "^2.8.5", "express": "^4.21.2", "jsonwebtoken": "^9.0.2", "react": "^18.3.1", "react-dom": "^18.3.1"},
+  "devDependencies": {"@types/bcryptjs": "^2.4.6", "@types/cors": "^2.8.17", "@types/express": "^5.0.0", "@types/jsonwebtoken": "^9.0.7", "@types/node": "^22.10.2", "@types/react": "^18.3.12", "@types/react-dom": "^18.3.1", "@vitejs/plugin-react": "^4.3.4", "concurrently": "^9.1.0", "tsx": "^4.19.2", "typescript": "^5.7.2", "vite": "^5.4.11"}
+}
