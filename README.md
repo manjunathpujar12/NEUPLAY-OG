@@ -26,13 +26,11 @@ Accessibility:
 Goal:
 Generate a prototype where the **Doctor Dashboard clearly shows patient recovery data** (finger exercises listed, tracked, and reported), while patients interact with a **piano-playing rehab game** that feeds progress into the dashboard.
 
-This project was built with [Lovable](https://lovable.dev).
-
-**Live app**: https://rehab-harmony-hub.lovable.app
+This project was built with AI Tools
 
 ## Build with Lovable
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/94e1cd6c-5328-4431-85b2-1f83448fb40f).
+Continue developing this project.
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
 - **Stay in sync**: every change made in Lovable is committed straight to this repository.
@@ -40,11 +38,7 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Prefer working locally?  nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+```
 ```
