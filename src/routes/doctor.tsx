@@ -55,7 +55,7 @@ import {
   weeklySeries,
   type Patient,
 } from "@/lib/neuplay-store";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/doctor")({
   head: () => ({
@@ -76,13 +76,65 @@ export const Route = createFileRoute("/doctor")({
   component: DoctorPage,
 });
 
+type DoctorSession = Session | { user: { id: string; email?: string } };
+
+const DEMO_CLINICIAN = {
+  hospitalId: "HOSP-001",
+  doctorId: "DOC-1001",
+  email: "doctor@neuplay.demo",
+  password: "password123",
+};
+
+const DEMO_SESSION_KEY = "neuplay.doctor.demo_auth.v1";
+
+function getDemoSession(): DoctorSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(DEMO_SESSION_KEY);
+    return raw ? (JSON.parse(raw) as DoctorSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setDemoSession(session: DoctorSession | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (session) {
+      window.sessionStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(session));
+    } else {
+      window.sessionStorage.removeItem(DEMO_SESSION_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function DoctorPage() {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<DoctorSession | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
     let active = true;
+
+    const client = supabase;
+    if (!isSupabaseConfigured || !client) {
+      const demo = getDemoSession();
+      if (active) {
+        if (demo) {
+          setSession(demo);
+          setAuthorized(true);
+        } else {
+          setSession(null);
+          setAuthorized(false);
+        }
+        setCheckingSession(false);
+      }
+      return () => {
+        active = false;
+      };
+    }
 
     const validateSession = async (nextSession: Session | null) => {
       if (!nextSession) {
@@ -94,7 +146,7 @@ function DoctorPage() {
         return;
       }
 
-      const { data: clinician, error } = await supabase
+      const { data: clinician, error } = await client
         .from("clinicians")
         .select("auth_user_id, approved")
         .eq("auth_user_id", nextSession.user.id)
@@ -103,7 +155,7 @@ function DoctorPage() {
         !error && clinician?.auth_user_id === nextSession.user.id && clinician.approved;
 
       if (!isAuthorized) {
-        await supabase.auth.signOut();
+        await client.auth.signOut();
       }
       if (active) {
         setSession(isAuthorized ? nextSession : null);
@@ -112,8 +164,8 @@ function DoctorPage() {
       }
     };
 
-    void supabase.auth.getSession().then(({ data }) => validateSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    void client.auth.getSession().then(({ data }) => validateSession(data.session));
+    const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
       void validateSession(nextSession);
     });
 
@@ -123,15 +175,29 @@ function DoctorPage() {
     };
   }, []);
 
+  const handleLogout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut();
+    }
+    setDemoSession(null);
+    setSession(null);
+    setAuthorized(false);
+  };
+
   if (checkingSession) return null;
   return authorized && session ? (
-    <DoctorDashboard onLogout={() => supabase.auth.signOut()} />
+    <DoctorDashboard onLogout={handleLogout} />
   ) : (
-    <DoctorLogin />
+    <DoctorLogin
+      onSuccess={(newSession) => {
+        setSession(newSession);
+        setAuthorized(true);
+      }}
+    />
   );
 }
 
-function DoctorLogin() {
+function DoctorLogin({ onSuccess }: { onSuccess?: (session: DoctorSession) => void }) {
   const [hospitalId, setHospitalId] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [email, setEmail] = useState("");
@@ -146,7 +212,36 @@ function DoctorLogin() {
     setSubmitting(true);
     setError("");
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    const client = supabase;
+
+    // Demo authentication path when Supabase is not configured
+    if (!isSupabaseConfigured || !client) {
+      const validDemo =
+        hospitalId.trim().toUpperCase() === DEMO_CLINICIAN.hospitalId &&
+        doctorId.trim().toUpperCase() === DEMO_CLINICIAN.doctorId &&
+        email.trim().toLowerCase() === DEMO_CLINICIAN.email.toLowerCase() &&
+        (password === DEMO_CLINICIAN.password || password === DEMO_CLINICIAN.doctorId);
+
+      if (!validDemo) {
+        setError("Invalid hospital ID, doctor ID, or password.");
+        setSubmitting(false);
+        return;
+      }
+
+      const demoSession: DoctorSession = {
+        user: {
+          id: "demo-clinician-1001",
+          email: DEMO_CLINICIAN.email,
+        },
+      };
+      setDemoSession(demoSession);
+      onSuccess?.(demoSession);
+      setSubmitting(false);
+      return;
+    }
+
+    // Real Supabase authentication path
+    const { data: authData, error: authError } = await client.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -157,7 +252,7 @@ function DoctorLogin() {
       return;
     }
 
-    const { data: clinician, error: clinicianError } = await supabase
+    const { data: clinician, error: clinicianError } = await client
       .from("clinicians")
       .select("auth_user_id, hospital_id, doctor_id, approved")
       .eq("auth_user_id", user.id)
@@ -170,7 +265,7 @@ function DoctorLogin() {
       clinician.approved === true;
 
     if (!validClinician) {
-      await supabase.auth.signOut();
+      await client.auth.signOut();
       setError("Invalid hospital ID, doctor ID, or password.");
     }
     setSubmitting(false);
@@ -296,7 +391,7 @@ function DoctorLogin() {
                 Forgot password?
               </button>
               <p className="text-muted-foreground border-border border-t pt-4 text-center text-xs">
-                Demo access: HOSP-001 · DOC-1001
+                Demo access: HOSP-001 · DOC-1001 · Password: password123
               </p>
             </form>
           </CardContent>
